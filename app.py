@@ -67,9 +67,7 @@ hisse_listesi = [
 
 # --- YAN MENÜ ---
 st.sidebar.header("Ayarlar")
-# Listeyi sırala
 hisse_listesi.sort()
-# Varsayılan olarak THYAO seçili olsun
 varsayilan_index = hisse_listesi.index("THYAO.IS") if "THYAO.IS" in hisse_listesi else 0
 hisse_kodu = st.sidebar.selectbox("Hisse Seçin:", hisse_listesi, index=varsayilan_index)
 analiz_butonu = st.sidebar.button("ANALİZİ BAŞLAT 🚀")
@@ -77,7 +75,9 @@ analiz_butonu = st.sidebar.button("ANALİZİ BAŞLAT 🚀")
 def analiz_yap(sembol):
     try:
         hisse = yf.Ticker(sembol)
-        df = hisse.history(period="6mo")
+        # DÜZELTME: SMA200 hesabı için veriyi tekrar 2 yıllık çekiyoruz.
+        # 6 ay veri ile 200 günlük ortalama hesaplanamazdı.
+        df = hisse.history(period="2y")
         bilgi = hisse.info
         
         if df.empty:
@@ -90,7 +90,7 @@ def analiz_yap(sembol):
     # --- HESAPLAMALAR ---
     df['RSI'] = df.ta.rsi(length=14)
     df['SMA50'] = df.ta.sma(length=50)
-    df['SMA200'] = df.ta.sma(length=200)
+    df['SMA200'] = df.ta.sma(length=200) # Artık veri bol olduğu için bu hata vermeyecek
     df['ATR'] = df.ta.atr(length=14)
     
     # Bollinger
@@ -123,27 +123,31 @@ def analiz_yap(sembol):
 
     # --- 1. GRAFİK: BASİT ÇİZGİ (HIZLI BAKIŞ) ---
     st.subheader("📉 Hızlı Trend (Çizgi Grafik)")
-    st.line_chart(df['Close'].tail(180))
+    st.line_chart(df['Close'].tail(180)) # Son 6 ayı göster
 
     # --- 2. GRAFİK: PROFESYONEL MUM (DETAYLI ANALİZ) ---
     st.subheader("🕯️ Profesyonel Analiz (Mum & Bollinger)")
     
+    # Grafikte sadece son 6 ayı (yaklaşık 120-150 bar) gösterelim ki mumlar net görünsün
+    # Veriyi kestik ama hesaplamalar yukarıda yapıldığı için çizgiler bozulmaz.
+    df_grafik = df.tail(150)
+    
     fig = go.Figure()
 
     # Mumlar
-    fig.add_trace(go.Candlestick(x=df.index,
-                    open=df['Open'], high=df['High'],
-                    low=df['Low'], close=df['Close'],
+    fig.add_trace(go.Candlestick(x=df_grafik.index,
+                    open=df_grafik['Open'], high=df_grafik['High'],
+                    low=df_grafik['Low'], close=df_grafik['Close'],
                     name='Fiyat'))
 
     # Bollinger Bantları
-    fig.add_trace(go.Scatter(x=df.index, y=df['BB_Upper'], 
+    fig.add_trace(go.Scatter(x=df_grafik.index, y=df_grafik['BB_Upper'], 
                              line=dict(color='gray', width=1, dash='dot'), name='Üst Bant'))
-    fig.add_trace(go.Scatter(x=df.index, y=df['BB_Lower'], 
+    fig.add_trace(go.Scatter(x=df_grafik.index, y=df_grafik['BB_Lower'], 
                              line=dict(color='gray', width=1, dash='dot'), name='Alt Bant'))
 
     # SMA 50
-    fig.add_trace(go.Scatter(x=df.index, y=df['SMA50'], 
+    fig.add_trace(go.Scatter(x=df_grafik.index, y=df_grafik['SMA50'], 
                              line=dict(color='orange', width=1), name='SMA 50'))
 
     fig.update_layout(xaxis_rangeslider_visible=False, height=500, template="plotly_white")
