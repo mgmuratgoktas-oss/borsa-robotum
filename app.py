@@ -2,16 +2,15 @@ import streamlit as st
 import yfinance as yf
 import pandas_ta as ta
 import pandas as pd
+import plotly.graph_objects as go
 
 # --- SAYFA AYARLARI ---
 st.set_page_config(page_title="Cep Borsa Pro", page_icon="📈", layout="centered")
 
 st.title("📈 Canlı Borsa Analiz Robotu")
-st.markdown("İstediğiniz hisseyi seçin, yapay zeka analiz etsin.")
+st.markdown("Basit ve Profesyonel grafikleri aynı anda inceleyin.")
 
-# --- MEGA HİSSE LİSTESİ (Manuel Veritabanı) ---
-# Sunucu hatalarından etkilenmemek için BIST'teki hisseleri buraya gömdük.
-# Bu liste internet olmasa bile çalışır.
+# --- MEGA HİSSE LİSTESİ ---
 hisse_listesi = [
     "ACSEL.IS", "ADEL.IS", "ADESE.IS", "AEFES.IS", "AFYON.IS", "AGESA.IS", "AGHOL.IS", "AGYO.IS", "AKBNK.IS", "AKCNS.IS", 
     "AKENR.IS", "AKFGY.IS", "AKGRT.IS", "AKMGY.IS", "AKSA.IS", "AKSEN.IS", "AKSGY.IS", "AKSUE.IS", "AKYHO.IS", "ALARK.IS", 
@@ -78,12 +77,11 @@ analiz_butonu = st.sidebar.button("ANALİZİ BAŞLAT 🚀")
 def analiz_yap(sembol):
     try:
         hisse = yf.Ticker(sembol)
-        # Veri çek (Son 1 Yıl)
-        df = hisse.history(period="1y")
+        df = hisse.history(period="6mo")
         bilgi = hisse.info
         
         if df.empty:
-            st.error("Veri alınamadı! (Yahoo Finance sunucusu yanıt vermedi)")
+            st.error("Veri alınamadı!")
             return
     except:
         st.error("Bağlantı hatası.")
@@ -100,63 +98,77 @@ def analiz_yap(sembol):
     if bb is not None:
         df['BB_Upper'] = bb.iloc[:, 2]
         df['BB_Lower'] = bb.iloc[:, 0]
+        df['BB_Mid'] = bb.iloc[:, 1]
 
-    # Destek & Direnç (Son 1 Ay)
+    # Destek & Direnç
     son_20_gun = df[-20:]
     direnc = son_20_gun['High'].max()
     destek = son_20_gun['Low'].min()
-    
     son = df.iloc[-1]
     
     # --- SONUÇ EKRANI ---
     st.divider()
     st.header(f"{sembol} Analiz Raporu")
     
+    # METRİKLER
     c1, c2, c3 = st.columns(3)
     c1.metric("Fiyat", f"{son['Close']:.2f} TL")
     
-    # RSI Durumu
-    if son['RSI'] < 30: 
-        c2.success(f"RSI: {son['RSI']:.2f} (AL BÖLGESİ)")
-    elif son['RSI'] > 70: 
-        c2.error(f"RSI: {son['RSI']:.2f} (SAT BÖLGESİ)")
-    else: 
-        c2.metric("RSI", f"{son['RSI']:.2f} (Nötr)")
+    if son['RSI'] < 30: c2.success(f"RSI: {son['RSI']:.2f} (AL)")
+    elif son['RSI'] > 70: c2.error(f"RSI: {son['RSI']:.2f} (SAT)")
+    else: c2.metric("RSI", f"{son['RSI']:.2f}")
 
-    # Trend Durumu
-    if son['SMA50'] > son['SMA200']:
-        c3.success("TREND: BOĞA (Yükseliş)")
-    else:
-        c3.warning("TREND: AYI (Düşüş/Yatay)")
+    if son['SMA50'] > son['SMA200']: c3.success("TREND: BOĞA")
+    else: c3.warning("TREND: AYI")
 
-    # Grafik
+    # --- 1. GRAFİK: BASİT ÇİZGİ (HIZLI BAKIŞ) ---
+    st.subheader("📉 Hızlı Trend (Çizgi Grafik)")
     st.line_chart(df['Close'].tail(180))
 
-    # Detaylar
+    # --- 2. GRAFİK: PROFESYONEL MUM (DETAYLI ANALİZ) ---
+    st.subheader("🕯️ Profesyonel Analiz (Mum & Bollinger)")
+    
+    fig = go.Figure()
+
+    # Mumlar
+    fig.add_trace(go.Candlestick(x=df.index,
+                    open=df['Open'], high=df['High'],
+                    low=df['Low'], close=df['Close'],
+                    name='Fiyat'))
+
+    # Bollinger Bantları
+    fig.add_trace(go.Scatter(x=df.index, y=df['BB_Upper'], 
+                             line=dict(color='gray', width=1, dash='dot'), name='Üst Bant'))
+    fig.add_trace(go.Scatter(x=df.index, y=df['BB_Lower'], 
+                             line=dict(color='gray', width=1, dash='dot'), name='Alt Bant'))
+
+    # SMA 50
+    fig.add_trace(go.Scatter(x=df.index, y=df['SMA50'], 
+                             line=dict(color='orange', width=1), name='SMA 50'))
+
+    fig.update_layout(xaxis_rangeslider_visible=False, height=500, template="plotly_white")
+    st.plotly_chart(fig, use_container_width=True)
+
+    # --- TABLOLAR ---
     col_sol, col_sag = st.columns(2)
     
     with col_sol:
         st.info("📊 FİNANSAL DURUM")
         fk = bilgi.get('trailingPE')
         pddd = bilgi.get('priceToBook')
-        
         if fk:
             yorum = "✅ Ucuz" if fk < 10 else ("⚠️ Pahalı" if fk > 20 else "✅ Makul")
             st.write(f"**F/K:** {fk:.2f} ({yorum})")
-        else:
-            st.write("**F/K:** Veri Yok")
-            
-        if pddd:
-            st.write(f"**PD/DD:** {pddd:.2f}")
-        else:
-            st.write("**PD/DD:** Veri Yok")
+        else: st.write("**F/K:** Veri Yok")
+        if pddd: st.write(f"**PD/DD:** {pddd:.2f}")
+        else: st.write("**PD/DD:** Veri Yok")
 
     with col_sag:
-        st.info("🛡️ SEVİYELER")
+        st.info("🛡️ SEVİYELER & STOP")
         st.write(f"**Direnç:** {direnc:.2f} TL")
         st.write(f"**Destek:** {destek:.2f} TL")
         st.error(f"**Stop-Loss:** {destek * 0.99:.2f} TL")
 
 if analiz_butonu:
-    with st.spinner('Veriler analiz ediliyor...'):
+    with st.spinner('Grafikler hazırlanıyor...'):
         analiz_yap(hisse_kodu)
